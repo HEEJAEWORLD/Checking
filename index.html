@@ -373,6 +373,61 @@
     pointer-events: none;
   }
 
+  /* Tolerance row */
+  .tolerance-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--rule);
+    flex-wrap: wrap;
+  }
+
+  .tolerance-label {
+    font-size: 13px;
+    color: var(--ink-soft);
+    font-weight: 500;
+  }
+
+  .tolerance-pm {
+    font-family: "IBM Plex Mono", monospace;
+    color: var(--ink-muted);
+    font-size: 16px;
+  }
+
+  .tolerance-input {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 14px;
+    padding: 6px 10px;
+    border: 1px solid var(--rule);
+    background: #fff;
+    color: var(--ink);
+    border-radius: 2px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    width: 100px;
+    transition: all 0.15s ease;
+  }
+
+  .tolerance-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(139, 58, 31, 0.08);
+  }
+
+  .tolerance-unit {
+    font-size: 13px;
+    color: var(--ink-muted);
+  }
+
+  .tolerance-help {
+    font-size: 12px;
+    color: var(--ink-muted);
+    margin-left: auto;
+    font-style: italic;
+  }
+
   /* Results */
   .results-section {
     display: none;
@@ -430,12 +485,16 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
+    gap: 12px;
+    flex-wrap: wrap;
   }
 
   .combo-label {
     font-family: "Noto Serif KR", serif;
     font-size: 16px;
     font-weight: 500;
+    flex: 1;
+    min-width: 0;
   }
 
   .combo-label .index {
@@ -444,6 +503,41 @@
     font-size: 12px;
     margin-right: 10px;
     letter-spacing: 0.1em;
+  }
+
+  .combo-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .diff-badge {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 2px;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .diff-badge.exact {
+    background: rgba(45, 90, 62, 0.1);
+    color: var(--success);
+    border: 1px solid rgba(45, 90, 62, 0.2);
+  }
+
+  .diff-badge.over {
+    background: rgba(139, 105, 20, 0.08);
+    color: var(--warning);
+    border: 1px solid rgba(139, 105, 20, 0.2);
+  }
+
+  .diff-badge.under {
+    background: rgba(139, 58, 31, 0.06);
+    color: var(--accent);
+    border: 1px solid rgba(139, 58, 31, 0.18);
   }
 
   .combo-meta {
@@ -597,6 +691,14 @@
         </div>
         <button class="btn primary" id="findBtn">조합 찾기 →</button>
       </div>
+
+      <div class="tolerance-row">
+        <span class="tolerance-label">허용 오차</span>
+        <span class="tolerance-pm">±</span>
+        <input type="text" class="tolerance-input" id="toleranceInput" placeholder="0" inputmode="numeric">
+        <span class="tolerance-unit">원</span>
+        <span class="tolerance-help">0이면 정확한 금액만</span>
+      </div>
     </div>
   </section>
 
@@ -629,6 +731,7 @@
   const $count = document.getElementById('receiptCount');
   const $total = document.getElementById('grandTotal');
   const $target = document.getElementById('targetInput');
+  const $tolerance = document.getElementById('toleranceInput');
   const $findBtn = document.getElementById('findBtn');
   const $resultsSection = document.getElementById('resultsSection');
   const $resultSummary = document.getElementById('resultSummary');
@@ -768,29 +871,50 @@
     }
   });
 
+  // Tolerance input formatting
+  $tolerance.addEventListener('input', e => {
+    const raw = parseNum(e.target.value);
+    e.target.value = raw ? formatNum(raw) : '';
+  });
+
+  $tolerance.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      findCombinations();
+    }
+  });
+
   $findBtn.addEventListener('click', findCombinations);
 
   // ─── Subset-sum algorithm ──────────────────────────────
-  function computeCombinations(items, target) {
+  function computeCombinations(items, target, tolerance) {
     // items: [{originalIndex, amount, name}]
     // Sort ascending by amount for branch-pruning effectiveness
     const sorted = [...items].sort((a, b) => a.amount - b.amount);
 
     const results = [];
     let truncated = false;
+    const lower = target - tolerance;
+    const upper = target + tolerance;
 
     function backtrack(start, current, sum) {
-      if (sum === target) {
-        results.push([...current]);
-        if (results.length >= MAX_COMBINATIONS) truncated = true;
-        return;
-      }
-      if (sum > target) return;
+      if (sum > upper) return;
       if (truncated) return;
+
+      // If current sum is in valid range, record this combination.
+      // We continue exploring because adding more items might still fit
+      // within the upper bound (when tolerance > 0).
+      if (sum >= lower && current.length > 0) {
+        results.push({ items: [...current], sum, diff: sum - target });
+        if (results.length >= MAX_COMBINATIONS) {
+          truncated = true;
+          return;
+        }
+      }
 
       for (let i = start; i < sorted.length; i++) {
         const next = sum + sorted[i].amount;
-        if (next > target) break; // since sorted ascending, all rest will overshoot
+        if (next > upper) break; // ascending sort: all rest will overshoot
         current.push(sorted[i]);
         backtrack(i + 1, current, next);
         current.pop();
@@ -805,6 +929,7 @@
   // ─── Find action ───────────────────────────────────────
   function findCombinations() {
     const target = parseNum($target.value);
+    const tolerance = Math.max(0, parseNum($tolerance.value));
     const valid = receipts.filter(r => r.amount > 0);
 
     if (valid.length === 0) {
@@ -821,20 +946,24 @@
       .map((r, i) => ({ originalIndex: i + 1, amount: r.amount, name: r.name }))
       .filter(it => it.amount > 0);
 
-    const { results, truncated } = computeCombinations(items, target);
+    const { results, truncated } = computeCombinations(items, target, tolerance);
 
-    // Sort: fewer receipts first, then by lowest receipt number sequence
+    // Sort: exact matches first (|diff|=0), then by |diff|, then by fewer
+    // receipts, then by lowest receipt number sequence for stability.
     results.sort((a, b) => {
-      if (a.length !== b.length) return a.length - b.length;
-      const an = a.map(x => x.originalIndex).sort((p, q) => p - q);
-      const bn = b.map(x => x.originalIndex).sort((p, q) => p - q);
+      const da = Math.abs(a.diff);
+      const db = Math.abs(b.diff);
+      if (da !== db) return da - db;
+      if (a.items.length !== b.items.length) return a.items.length - b.items.length;
+      const an = a.items.map(x => x.originalIndex).sort((p, q) => p - q);
+      const bn = b.items.map(x => x.originalIndex).sort((p, q) => p - q);
       for (let i = 0; i < an.length; i++) {
         if (an[i] !== bn[i]) return an[i] - bn[i];
       }
       return 0;
     });
 
-    renderResults(target, results, truncated);
+    renderResults(target, tolerance, results, truncated);
   }
 
   function showError(msg) {
@@ -852,60 +981,91 @@
     $resultsSection.classList.remove('visible');
   }
 
-  function renderResults(target, results, truncated) {
+  function renderResults(target, tolerance, results, truncated) {
     $resultsSection.classList.add('visible');
 
     if (results.length === 0) {
+      const rangeText = tolerance > 0
+        ? `${formatNum(target - tolerance)}원 ~ ${formatNum(target + tolerance)}원 범위`
+        : `<strong>${formatNum(target)}원</strong>`;
       $resultSummary.innerHTML = `
         <div class="result-summary no-match">
-          <strong>${formatNum(target)}원</strong>에 정확히 맞는 조합을 찾을 수 없습니다.
+          ${rangeText}에 맞는 조합을 찾을 수 없습니다.
           영수증 금액이나 목표 금액을 다시 확인해 주세요.
         </div>`;
       $combinations.innerHTML = '';
       $resultMeta.textContent = '0개';
-    } else {
-      const countText = truncated
-        ? `${results.length}+개`
-        : `${results.length}개`;
-      $resultMeta.textContent = countText;
-
-      $resultSummary.innerHTML = `
-        <div class="result-summary">
-          목표 <strong>${formatNum(target)}원</strong>에 맞는 조합 <strong>${countText}</strong>를 찾았습니다.
-          ${truncated ? `<br><span style="color: var(--warning);">※ 조합이 너무 많아 ${MAX_COMBINATIONS}개까지만 표시합니다.</span>` : ''}
-        </div>`;
-
-      $combinations.innerHTML = results.map((combo, idx) => {
-        // Sort within combo by original receipt number for display
-        const sorted = [...combo].sort((a, b) => a.originalIndex - b.originalIndex);
-        const chips = sorted.map(it => `
-          <div class="receipt-chip">
-            <span class="chip-num">#${it.originalIndex}</span>
-            ${it.name ? `<span class="chip-name">${escapeHtml(it.name)}</span>` : ''}
-            <span class="chip-amt">${formatNum(it.amount)}원</span>
-          </div>
-        `).join('');
-
-        const equation = sorted.map(it => formatNum(it.amount)).join(' + ')
-          + ` <span class="equals">= ${formatNum(target)}</span>`;
-
-        const numbers = sorted.map(it => it.originalIndex).join('번 + ') + '번';
-
-        return `
-          <div class="combination">
-            <div class="combo-header">
-              <div class="combo-label">
-                <span class="index">조합 ${String(idx + 1).padStart(2, '0')}</span>
-                ${numbers}을(를) 더하세요
-              </div>
-              <div class="combo-meta">${sorted.length}장</div>
-            </div>
-            <div class="combo-receipts">${chips}</div>
-            <div class="combo-equation">${equation}</div>
-          </div>
-        `;
-      }).join('');
+      $resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
     }
+
+    const exactCount = results.filter(r => r.diff === 0).length;
+    const countText = truncated ? `${results.length}+개` : `${results.length}개`;
+    $resultMeta.textContent = countText;
+
+    let summaryHtml;
+    if (tolerance === 0) {
+      summaryHtml = `목표 <strong>${formatNum(target)}원</strong>에 맞는 조합 <strong>${countText}</strong>를 찾았습니다.`;
+    } else {
+      const rangeStart = formatNum(target - tolerance);
+      const rangeEnd = formatNum(target + tolerance);
+      summaryHtml = `<strong>${formatNum(target)}원</strong> ± ${formatNum(tolerance)}원 범위(${rangeStart}~${rangeEnd}원)에서 <strong>${countText}</strong>의 조합을 찾았습니다.`;
+      if (exactCount > 0) {
+        summaryHtml += ` <span style="color: var(--success);">정확히 일치 ${exactCount}개 포함.</span>`;
+      } else {
+        summaryHtml += ` <span style="color: var(--warning);">정확히 일치하는 조합은 없습니다.</span>`;
+      }
+    }
+
+    if (truncated) {
+      summaryHtml += `<br><span style="color: var(--warning);">※ 조합이 너무 많아 ${MAX_COMBINATIONS}개까지만 표시합니다.</span>`;
+    }
+
+    $resultSummary.innerHTML = `<div class="result-summary">${summaryHtml}</div>`;
+
+    $combinations.innerHTML = results.map((combo, idx) => {
+      // Sort within combo by original receipt number for display
+      const sorted = [...combo.items].sort((a, b) => a.originalIndex - b.originalIndex);
+      const chips = sorted.map(it => `
+        <div class="receipt-chip">
+          <span class="chip-num">#${it.originalIndex}</span>
+          ${it.name ? `<span class="chip-name">${escapeHtml(it.name)}</span>` : ''}
+          <span class="chip-amt">${formatNum(it.amount)}원</span>
+        </div>
+      `).join('');
+
+      const equation = sorted.map(it => formatNum(it.amount)).join(' + ')
+        + ` <span class="equals">= ${formatNum(combo.sum)}</span>`;
+
+      const numbers = sorted.map(it => it.originalIndex).join('번 + ') + '번';
+
+      // Diff badge
+      let badgeHtml;
+      if (combo.diff === 0) {
+        badgeHtml = `<span class="diff-badge exact">✓ 정확</span>`;
+      } else if (combo.diff > 0) {
+        badgeHtml = `<span class="diff-badge over">+${formatNum(combo.diff)}원</span>`;
+      } else {
+        badgeHtml = `<span class="diff-badge under">−${formatNum(Math.abs(combo.diff))}원</span>`;
+      }
+
+      return `
+        <div class="combination">
+          <div class="combo-header">
+            <div class="combo-label">
+              <span class="index">조합 ${String(idx + 1).padStart(2, '0')}</span>
+              ${numbers}을(를) 더하세요
+            </div>
+            <div class="combo-badges">
+              ${badgeHtml}
+              <span class="combo-meta">${sorted.length}장</span>
+            </div>
+          </div>
+          <div class="combo-receipts">${chips}</div>
+          <div class="combo-equation">${equation}</div>
+        </div>
+      `;
+    }).join('');
 
     $resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
