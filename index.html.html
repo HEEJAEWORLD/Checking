@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>영수증 조합기 · Receipt Matcher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@300;400;500;600&family=Noto+Serif+KR:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f3efe5;
+    --bg-grain: #ebe6d8;
+    --paper: #fbf9f3;
+    --ink: #1c1916;
+    --ink-soft: #4a443c;
+    --ink-muted: #8b8275;
+    --rule: #d6cdb8;
+    --rule-soft: #e6dfcc;
+    --accent: #8b3a1f;
+    --accent-soft: #c45a2f;
+    --success: #2d5a3e;
+    --danger: #7a1818;
+    --warning: #8b6914;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: "IBM Plex Sans KR", system-ui, sans-serif;
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(139, 58, 31, 0.04) 0%, transparent 40%),
+      radial-gradient(circle at 80% 90%, rgba(45, 90, 62, 0.04) 0%, transparent 40%);
+    color: var(--ink);
+    line-height: 1.6;
+    font-weight: 400;
+    min-height: 100vh;
+    padding: 48px 24px 96px;
+  }
+
+  /* Subtle paper grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.4;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 880px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Header */
+  header {
+    text-align: center;
+    margin-bottom: 56px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--rule);
+    position: relative;
+  }
+
+  header::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -4px;
+    width: 80px;
+    height: 1px;
+    background: var(--accent);
+    transform: translateX(-50%);
+  }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    font-weight: 500;
+  }
+
+  h1 {
+    font-family: "Noto Serif KR", serif;
+    font-size: clamp(32px, 5vw, 44px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    color: var(--ink);
+    margin-bottom: 12px;
+  }
+
+  .subtitle {
+    color: var(--ink-soft);
+    font-size: 15px;
+    max-width: 520px;
+    margin: 0 auto;
+  }
+
+  /* Section */
+  section {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    margin-bottom: 24px;
+    box-shadow:
+      0 1px 0 rgba(28, 25, 22, 0.02),
+      0 4px 12px rgba(28, 25, 22, 0.04);
+    overflow: hidden;
+  }
+
+  .section-header {
+    padding: 24px 32px 16px;
+    border-bottom: 1px solid var(--rule-soft);
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .section-num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.2em;
+    font-weight: 500;
+  }
+
+  .section-title {
+    font-family: "Noto Serif KR", serif;
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+
+  .section-meta {
+    margin-left: auto;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--ink-muted);
+  }
+
+  .section-body {
+    padding: 24px 32px 32px;
+  }
+
+  /* Receipt list */
+  .receipts {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .receipt-row {
+    display: grid;
+    grid-template-columns: 60px 1fr 160px 40px;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--rule-soft);
+  }
+
+  .receipt-row:last-child {
+    border-bottom: none;
+  }
+
+  .receipt-row.header {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 4px;
+  }
+
+  .receipt-num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 14px;
+    color: var(--ink-soft);
+    font-weight: 500;
+    text-align: center;
+  }
+
+  .receipt-row input[type="text"],
+  .receipt-row input[type="number"] {
+    font-family: inherit;
+    font-size: 15px;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ink);
+    border-radius: 2px;
+    transition: all 0.15s ease;
+    width: 100%;
+  }
+
+  .receipt-row input[type="number"] {
+    font-family: "IBM Plex Mono", monospace;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .receipt-row input:hover {
+    background: rgba(139, 58, 31, 0.03);
+  }
+
+  .receipt-row input:focus {
+    outline: none;
+    background: #fff;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(139, 58, 31, 0.08);
+  }
+
+  .receipt-row input::placeholder {
+    color: var(--ink-muted);
+    opacity: 0.6;
+  }
+
+  .delete-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--ink-muted);
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .delete-btn:hover {
+    color: var(--danger);
+    background: rgba(122, 24, 24, 0.06);
+    border-color: rgba(122, 24, 24, 0.15);
+  }
+
+  /* Action buttons */
+  .actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .btn {
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 10px 20px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+
+  .btn:hover {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  .btn.primary {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+    padding: 14px 32px;
+    font-size: 15px;
+  }
+
+  .btn.primary:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .btn.text {
+    border: none;
+    color: var(--ink-muted);
+    padding: 8px 12px;
+    background: transparent;
+  }
+
+  .btn.text:hover {
+    color: var(--accent);
+    background: transparent;
+  }
+
+  /* Total display */
+  .total-strip {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 2px solid var(--ink);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: "IBM Plex Mono", monospace;
+  }
+
+  .total-label {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+
+  .total-amount {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Target input */
+  .target-group {
+    display: flex;
+    gap: 16px;
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .target-input-wrap {
+    flex: 1;
+    min-width: 240px;
+    position: relative;
+  }
+
+  .target-input {
+    width: 100%;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 24px;
+    font-weight: 500;
+    padding: 16px 60px 16px 20px;
+    border: 1px solid var(--rule);
+    background: #fff;
+    color: var(--ink);
+    border-radius: 2px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    transition: all 0.15s ease;
+  }
+
+  .target-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(139, 58, 31, 0.08);
+  }
+
+  .target-currency {
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-muted);
+    font-family: "IBM Plex Sans KR", sans-serif;
+    font-size: 16px;
+    pointer-events: none;
+  }
+
+  /* Results */
+  .results-section {
+    display: none;
+  }
+
+  .results-section.visible {
+    display: block;
+    animation: fadeIn 0.4s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .result-summary {
+    padding: 20px 32px;
+    background: linear-gradient(180deg, rgba(45, 90, 62, 0.03), transparent);
+    border-bottom: 1px solid var(--rule-soft);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  .result-summary.no-match {
+    background: linear-gradient(180deg, rgba(139, 105, 20, 0.04), transparent);
+    color: var(--warning);
+  }
+
+  .result-summary strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .combinations {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .combination {
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  .combination:last-child {
+    border-bottom: none;
+  }
+
+  .combination:hover {
+    background: rgba(139, 58, 31, 0.02);
+  }
+
+  .combo-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .combo-label {
+    font-family: "Noto Serif KR", serif;
+    font-size: 16px;
+    font-weight: 500;
+  }
+
+  .combo-label .index {
+    color: var(--accent);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    margin-right: 10px;
+    letter-spacing: 0.1em;
+  }
+
+  .combo-meta {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .combo-receipts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .receipt-chip {
+    background: var(--bg-grain);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+  }
+
+  .chip-num {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 600;
+    color: var(--accent);
+    font-size: 12px;
+  }
+
+  .chip-name {
+    color: var(--ink-soft);
+  }
+
+  .chip-amt {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .combo-equation {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--rule);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+    word-break: break-all;
+  }
+
+  .combo-equation .equals {
+    color: var(--success);
+    font-weight: 600;
+  }
+
+  /* Empty state */
+  .empty {
+    padding: 48px 32px;
+    text-align: center;
+    color: var(--ink-muted);
+  }
+
+  .empty-icon {
+    font-family: "Noto Serif KR", serif;
+    font-size: 48px;
+    color: var(--rule);
+    margin-bottom: 12px;
+  }
+
+  /* Footer */
+  footer {
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--rule);
+    text-align: center;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-muted);
+    letter-spacing: 0.15em;
+  }
+
+  /* Mobile */
+  @media (max-width: 640px) {
+    body { padding: 24px 12px 64px; }
+    .section-header, .section-body, .combination, .result-summary { padding-left: 20px; padding-right: 20px; }
+    .receipt-row { grid-template-columns: 44px 1fr 110px 32px; gap: 8px; }
+    .receipt-row input { font-size: 14px; padding: 8px; }
+    .target-input { font-size: 20px; padding: 14px 50px 14px 16px; }
+    .btn.primary { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="eyebrow">Receipt Combination Finder</div>
+    <h1>영수증 조합기</h1>
+    <p class="subtitle">정산 시 원하는 합계 금액에 맞는 영수증 조합을 자동으로 찾아드립니다.</p>
+  </header>
+
+  <!-- Section 1: 영수증 입력 -->
+  <section>
+    <div class="section-header">
+      <span class="section-num">01</span>
+      <h2 class="section-title">영수증 입력</h2>
+      <span class="section-meta" id="receiptCount">0건</span>
+    </div>
+    <div class="section-body">
+      <div class="receipts">
+        <div class="receipt-row header">
+          <div>번호</div>
+          <div>메모 (선택)</div>
+          <div style="text-align: right;">금액 (원)</div>
+          <div></div>
+        </div>
+        <div id="receiptList"></div>
+      </div>
+
+      <div class="actions">
+        <button class="btn" id="addBtn">+ 영수증 추가</button>
+        <button class="btn text" id="sampleBtn">예시 채우기</button>
+        <button class="btn text" id="clearBtn">전체 비우기</button>
+      </div>
+
+      <div class="total-strip">
+        <span class="total-label">전체 합계 · Total</span>
+        <span class="total-amount" id="grandTotal">0원</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 2: 목표 금액 -->
+  <section>
+    <div class="section-header">
+      <span class="section-num">02</span>
+      <h2 class="section-title">목표 금액</h2>
+    </div>
+    <div class="section-body">
+      <div class="target-group">
+        <div class="target-input-wrap">
+          <input type="text" class="target-input" id="targetInput" placeholder="예: 50,000" inputmode="numeric">
+          <span class="target-currency">원</span>
+        </div>
+        <button class="btn primary" id="findBtn">조합 찾기 →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 3: 결과 -->
+  <section class="results-section" id="resultsSection">
+    <div class="section-header">
+      <span class="section-num">03</span>
+      <h2 class="section-title">결과</h2>
+      <span class="section-meta" id="resultMeta"></span>
+    </div>
+    <div id="resultSummary"></div>
+    <div class="combinations" id="combinations"></div>
+  </section>
+
+  <footer>
+    Receipt Matcher · v1.0
+  </footer>
+
+</div>
+
+<script>
+(() => {
+  // ─── State ─────────────────────────────────────────────
+  let receipts = []; // {id, name, amount}
+  let nextId = 1;
+  const MAX_COMBINATIONS = 500; // safety cap
+
+  // ─── DOM ───────────────────────────────────────────────
+  const $list = document.getElementById('receiptList');
+  const $count = document.getElementById('receiptCount');
+  const $total = document.getElementById('grandTotal');
+  const $target = document.getElementById('targetInput');
+  const $findBtn = document.getElementById('findBtn');
+  const $resultsSection = document.getElementById('resultsSection');
+  const $resultSummary = document.getElementById('resultSummary');
+  const $combinations = document.getElementById('combinations');
+  const $resultMeta = document.getElementById('resultMeta');
+
+  // ─── Helpers ───────────────────────────────────────────
+  const formatNum = n => n.toLocaleString('ko-KR');
+
+  const parseNum = str => {
+    if (typeof str === 'number') return str;
+    const cleaned = String(str).replace(/[^\d-]/g, '');
+    return cleaned === '' ? 0 : parseInt(cleaned, 10);
+  };
+
+  // ─── Receipt rendering ─────────────────────────────────
+  function render() {
+    $list.innerHTML = '';
+    receipts.forEach((r, idx) => {
+      const row = document.createElement('div');
+      row.className = 'receipt-row';
+      row.innerHTML = `
+        <div class="receipt-num">${idx + 1}</div>
+        <input type="text" data-id="${r.id}" data-field="name"
+               value="${escapeHtml(r.name)}" placeholder="예: 점심 식대">
+        <input type="text" data-id="${r.id}" data-field="amount" inputmode="numeric"
+               value="${r.amount ? formatNum(r.amount) : ''}" placeholder="0">
+        <button class="delete-btn" data-id="${r.id}" title="삭제">×</button>
+      `;
+      $list.appendChild(row);
+    });
+    updateSummary();
+  }
+
+  function updateSummary() {
+    const total = receipts.reduce((s, r) => s + r.amount, 0);
+    $total.textContent = formatNum(total) + '원';
+    $count.textContent = receipts.length + '건';
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ─── Receipt actions ───────────────────────────────────
+  function addReceipt(name = '', amount = 0) {
+    receipts.push({ id: nextId++, name, amount });
+    render();
+    // focus the new amount field
+    setTimeout(() => {
+      const inputs = $list.querySelectorAll('input[data-field="name"]');
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    }, 0);
+  }
+
+  function removeReceipt(id) {
+    receipts = receipts.filter(r => r.id !== id);
+    render();
+  }
+
+  function updateReceipt(id, field, value) {
+    const r = receipts.find(x => x.id === id);
+    if (!r) return;
+    if (field === 'amount') {
+      r.amount = parseNum(value);
+    } else {
+      r.name = value;
+    }
+    updateSummary();
+  }
+
+  // ─── Event handlers ────────────────────────────────────
+  $list.addEventListener('input', e => {
+    const t = e.target;
+    if (t.matches('input[data-field]')) {
+      const id = parseInt(t.dataset.id, 10);
+      const field = t.dataset.field;
+      if (field === 'amount') {
+        // live-format with commas while typing
+        const raw = parseNum(t.value);
+        updateReceipt(id, field, raw);
+        const cursorEnd = t.selectionEnd === t.value.length;
+        t.value = raw ? formatNum(raw) : '';
+        if (cursorEnd) {
+          t.setSelectionRange(t.value.length, t.value.length);
+        }
+      } else {
+        updateReceipt(id, field, t.value);
+      }
+    }
+  });
+
+  $list.addEventListener('click', e => {
+    if (e.target.matches('.delete-btn')) {
+      removeReceipt(parseInt(e.target.dataset.id, 10));
+    }
+  });
+
+  document.getElementById('addBtn').addEventListener('click', () => addReceipt());
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    if (receipts.length === 0) return;
+    if (confirm('모든 영수증을 삭제할까요?')) {
+      receipts = [];
+      render();
+      hideResults();
+    }
+  });
+
+  document.getElementById('sampleBtn').addEventListener('click', () => {
+    receipts = [
+      { id: nextId++, name: '카페', amount: 7000 },
+      { id: nextId++, name: '점심', amount: 13000 },
+      { id: nextId++, name: '간식', amount: 14000 },
+      { id: nextId++, name: '저녁', amount: 27000 },
+      { id: nextId++, name: '택시', amount: 31000 },
+    ];
+    render();
+    $target.value = '34,000';
+    hideResults();
+  });
+
+  // Target input formatting
+  $target.addEventListener('input', e => {
+    const raw = parseNum(e.target.value);
+    e.target.value = raw ? formatNum(raw) : '';
+  });
+
+  $target.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      findCombinations();
+    }
+  });
+
+  $findBtn.addEventListener('click', findCombinations);
+
+  // ─── Subset-sum algorithm ──────────────────────────────
+  function computeCombinations(items, target) {
+    // items: [{originalIndex, amount, name}]
+    // Sort ascending by amount for branch-pruning effectiveness
+    const sorted = [...items].sort((a, b) => a.amount - b.amount);
+
+    const results = [];
+    let truncated = false;
+
+    function backtrack(start, current, sum) {
+      if (sum === target) {
+        results.push([...current]);
+        if (results.length >= MAX_COMBINATIONS) truncated = true;
+        return;
+      }
+      if (sum > target) return;
+      if (truncated) return;
+
+      for (let i = start; i < sorted.length; i++) {
+        const next = sum + sorted[i].amount;
+        if (next > target) break; // since sorted ascending, all rest will overshoot
+        current.push(sorted[i]);
+        backtrack(i + 1, current, next);
+        current.pop();
+        if (truncated) return;
+      }
+    }
+
+    backtrack(0, [], 0);
+    return { results, truncated };
+  }
+
+  // ─── Find action ───────────────────────────────────────
+  function findCombinations() {
+    const target = parseNum($target.value);
+    const valid = receipts.filter(r => r.amount > 0);
+
+    if (valid.length === 0) {
+      showError('영수증을 먼저 입력해 주세요.');
+      return;
+    }
+    if (target <= 0) {
+      showError('목표 금액을 입력해 주세요.');
+      return;
+    }
+
+    // Prepare items with original (1-based) numbers
+    const items = receipts
+      .map((r, i) => ({ originalIndex: i + 1, amount: r.amount, name: r.name }))
+      .filter(it => it.amount > 0);
+
+    const { results, truncated } = computeCombinations(items, target);
+
+    // Sort: fewer receipts first, then by lowest receipt number sequence
+    results.sort((a, b) => {
+      if (a.length !== b.length) return a.length - b.length;
+      const an = a.map(x => x.originalIndex).sort((p, q) => p - q);
+      const bn = b.map(x => x.originalIndex).sort((p, q) => p - q);
+      for (let i = 0; i < an.length; i++) {
+        if (an[i] !== bn[i]) return an[i] - bn[i];
+      }
+      return 0;
+    });
+
+    renderResults(target, results, truncated);
+  }
+
+  function showError(msg) {
+    $resultsSection.classList.add('visible');
+    $resultSummary.innerHTML = `
+      <div class="result-summary no-match">
+        ${escapeHtml(msg)}
+      </div>`;
+    $combinations.innerHTML = '';
+    $resultMeta.textContent = '';
+    $resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function hideResults() {
+    $resultsSection.classList.remove('visible');
+  }
+
+  function renderResults(target, results, truncated) {
+    $resultsSection.classList.add('visible');
+
+    if (results.length === 0) {
+      $resultSummary.innerHTML = `
+        <div class="result-summary no-match">
+          <strong>${formatNum(target)}원</strong>에 정확히 맞는 조합을 찾을 수 없습니다.
+          영수증 금액이나 목표 금액을 다시 확인해 주세요.
+        </div>`;
+      $combinations.innerHTML = '';
+      $resultMeta.textContent = '0개';
+    } else {
+      const countText = truncated
+        ? `${results.length}+개`
+        : `${results.length}개`;
+      $resultMeta.textContent = countText;
+
+      $resultSummary.innerHTML = `
+        <div class="result-summary">
+          목표 <strong>${formatNum(target)}원</strong>에 맞는 조합 <strong>${countText}</strong>를 찾았습니다.
+          ${truncated ? `<br><span style="color: var(--warning);">※ 조합이 너무 많아 ${MAX_COMBINATIONS}개까지만 표시합니다.</span>` : ''}
+        </div>`;
+
+      $combinations.innerHTML = results.map((combo, idx) => {
+        // Sort within combo by original receipt number for display
+        const sorted = [...combo].sort((a, b) => a.originalIndex - b.originalIndex);
+        const chips = sorted.map(it => `
+          <div class="receipt-chip">
+            <span class="chip-num">#${it.originalIndex}</span>
+            ${it.name ? `<span class="chip-name">${escapeHtml(it.name)}</span>` : ''}
+            <span class="chip-amt">${formatNum(it.amount)}원</span>
+          </div>
+        `).join('');
+
+        const equation = sorted.map(it => formatNum(it.amount)).join(' + ')
+          + ` <span class="equals">= ${formatNum(target)}</span>`;
+
+        const numbers = sorted.map(it => it.originalIndex).join('번 + ') + '번';
+
+        return `
+          <div class="combination">
+            <div class="combo-header">
+              <div class="combo-label">
+                <span class="index">조합 ${String(idx + 1).padStart(2, '0')}</span>
+                ${numbers}을(를) 더하세요
+              </div>
+              <div class="combo-meta">${sorted.length}장</div>
+            </div>
+            <div class="combo-receipts">${chips}</div>
+            <div class="combo-equation">${equation}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    $resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ─── Init ──────────────────────────────────────────────
+  // Start with 5 empty rows so the user can start typing right away
+  for (let i = 0; i < 5; i++) {
+    receipts.push({ id: nextId++, name: '', amount: 0 });
+  }
+  render();
+})();
+</script>
+</body>
+</html>
